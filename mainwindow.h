@@ -7,6 +7,7 @@
 #include <QByteArray>
 #include <QPair>
 #include <QList>
+#include <QTimer>
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -14,9 +15,12 @@ class MainWindow;
 }
 QT_END_NAMESPACE
 
+class WatchfaceEngine;
+
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
+    QTimer *m_clockTimer = nullptr;
 
 public:
     explicit MainWindow(QWidget *parent = nullptr);
@@ -62,10 +66,32 @@ private slots:
 
     void on_pushButton_18_clicked();
 
+    void on_listWidget_currentRowChanged(int currentRow);
+
+    void on_pushButton_20_clicked();
+
+    void on_pushButton_8_clicked();
+
+    //void onPlayerctlReadyRead();
+
+    void on_pushButton_9_clicked();
+
+    void on_pushButton_21_clicked();
+
+    void on_pushButton_24_clicked();
+
+    void on_pushButton_22_clicked();
+
+signals:
+    // void nowPlayingTitleChanged(const QString &title);
+
 private:
     Ui::MainWindow *ui;
     QProcess *pipProcess;
 
+    // QProcess *playerctlProcess = nullptr;
+    // QByteArray playerctlBuffer;
+    //void startTitleMonitor();
     void installPipPackage(const QString &packageName);
     bool createVirtualEnv();
     QString venvPythonPath() const;
@@ -83,5 +109,11 @@ private:
     void stopBridge();
     void sendPypixelCommand(const QString &command, const QStringList &params);
     void flushPendingBridgeCommands();
+
+    // Watchface engine: owned here (not a local in the slot) so it stays
+    // alive for as long as the QTimer keeps ticking.
+    WatchfaceEngine *m_watchfaceEngine = nullptr;
+    QTimer *m_watchfaceTimer = nullptr;
+    bool copyDirRecursively(const QString &srcPath, const QString &dstPath);
 };
 #endif // MAINWINDOW_H

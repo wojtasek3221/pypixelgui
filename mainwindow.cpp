@@ -1,15 +1,26 @@
 #include "mainwindow.h"
 #include "./ui_mainwindow.h"
+#include "watchfaceengine.h"
+#include <QApplication>
 #include <QProcess>
 #include <QMetaEnum>
 #include <QDir>
-#include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QJsonParseError>
 #include <QMessageBox>
 #include <QFileDialog>
+#include <QFileInfo>
+#include <QTimer>
+#include <QDateTime>
+#include <QBuffer>
+#include <QFile>
+#include <QJsonDocument>
+#include <QJsonParseError>
+#include <QDebug>
+#include <cstdio>
+#include <QTextStream>
 static int page = 0;
 static bool deps_ok = true;
 static QString mac_add;
@@ -20,10 +31,36 @@ MainWindow::MainWindow(QWidget *parent)
 {
     ui->setupUi(this);
 
+    QFile file(QDir::homePath() + "/.pypixelguiconf/conf.txt");
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        qDebug() << "Could not open file:" << file.errorString();
+        return;
+    }
+
+    QTextStream in(&file);
+    QString content = in.readAll();   // read whole file
+    file.close();
+
+    if(content != "")
+    {
+        startBridge(content);
+        sendPypixelCommand("send_text", QStringList()
+                                            << "CONNECTION SUCCESFULL!"
+                                            << "animation=1" << "speed=50" << "color=ffffff");
+        ui->stackedWidget->setCurrentIndex(5);
+    }
+    else
+    {
     ui->stackedWidget->setCurrentIndex(0);
     ui->pushButton_2->setEnabled(false);
 
     ui->textEdit->insertPlainText("checking dependencies...");
+    QDir().mkpath(QDir::homePath() + "/.pypixelguiconf");
+    QDir().mkpath(QDir::homePath() + "/.pypixelguiconf/faces");
+    QFile file(QDir::homePath() + "/.pypixelguiconf/conf.txt");
+    file.open(QIODevice::WriteOnly);
+
+
     QProcess process;
     process.start("python3", QStringList() << "--version");
     if (!process.waitForStarted(1000))
@@ -65,6 +102,7 @@ MainWindow::MainWindow(QWidget *parent)
     {
         ui->pushButton_2->setEnabled(true);
     }
+   }
 }
 
 MainWindow::~MainWindow()
@@ -129,7 +167,7 @@ void MainWindow::on_stackedWidget_currentChanged(int arg1)
 }
 
 //
-//venv shit
+//venv
 //
 QString MainWindow::venvPythonPath() const
 {
@@ -526,6 +564,15 @@ void MainWindow::onBridgeFinished(int exitCode, QProcess::ExitStatus exitStatus)
 void MainWindow::on_pushButton_3_clicked()
 {
     const QString address = ui->lineEdit->text();
+    QFile file(QDir::homePath() + "/.pypixelguiconf/conf.txt");
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        qDebug() << "Could not open file:" << file.errorString();
+        return;
+    }
+
+    QTextStream out(&file);
+    out << address;
+    file.close();
     startBridge(address);
     sendPypixelCommand("send_text", QStringList()
                                         << "CONNECTION SUCCESFULL!"
@@ -599,6 +646,164 @@ void MainWindow::on_pushButton_19_clicked()
 
 void MainWindow::on_pushButton_18_clicked()
 {
-sendPypixelCommand("send_image", QStringList() << ui->lineEdit_7->text());
+    sendPypixelCommand("send_image", QStringList() << ui->lineEdit_7->text());
+}
+
+
+
+void MainWindow::on_listWidget_currentRowChanged(int currentRow)
+{
+
+}
+
+
+void MainWindow::on_pushButton_20_clicked()
+{
+    QString show_date = ui->checkBox_2->isChecked() ? "True" : "False";
+    QString format_24 = ui->checkBox_3->isChecked() ? "True" : "False";
+
+    sendPypixelCommand("set_clock_mode", QStringList()
+                                             << QString("style=%1").arg(ui->comboBox->currentIndex() + 1)
+                                             << QString("show_date=%1").arg(show_date)
+                                                       << QString("format_24=%1").arg(format_24));
+
+}
+
+
+void MainWindow::on_pushButton_8_clicked()
+{
+    ui->stackedWidget->setCurrentIndex(8);
+    ui->listWidget->clear();
+    QDir dir(QDir::homePath() + "/.pypixelguiconf/faces");
+    QStringList dirList = dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+    for (const QString &dirName : dirList) {
+        ui->listWidget->addItem(dirName);
+    }
+}
+
+//
+//music player
+//
+
+void MainWindow::on_pushButton_9_clicked()
+{
+
+}
+
+
+void MainWindow::on_pushButton_21_clicked()
+{
+    QFileDialog dialog(this);
+    dialog.setNameFilter(tr("Json watchface files (face.json)"));
+    dialog.setFileMode(QFileDialog::ExistingFile);
+    dialog.setDirectory(QDir::homePath());     // restrict to a single existing file
+    dialog.setAcceptMode(QFileDialog::AcceptOpen);   // "Open" dialog (default, but explicit is nice)
+
+    if (dialog.exec() == QDialog::Accepted) {
+        QStringList files = dialog.selectedFiles();
+        if (!files.isEmpty()) {
+            ui->lineEdit_5->setText(files.first());
+        }
+    }
+}
+
+bool MainWindow::copyDirRecursively(const QString &srcPath, const QString &dstPath)
+{
+    QDir srcDir(srcPath);
+    if (!srcDir.exists())
+        return false;
+
+    QDir dstDir(dstPath);
+    if (!dstDir.exists()) {
+        if (!QDir().mkpath(dstPath))
+            return false;
+    }
+
+    const QFileInfoList entries = srcDir.entryInfoList(QDir::NoDotAndDotDot | QDir::AllEntries);
+    for (const QFileInfo &entry : entries) {
+        QString srcItemPath = entry.absoluteFilePath();
+        QString dstItemPath = dstPath + "/" + entry.fileName();
+
+        if (entry.isDir()) {
+            if (!copyDirRecursively(srcItemPath, dstItemPath))
+                return false;
+        } else {
+            // remove existing file at destination first, QFile::copy fails if it exists
+            if (QFile::exists(dstItemPath))
+                QFile::remove(dstItemPath);
+            if (!QFile::copy(srcItemPath, dstItemPath))
+                return false;
+        }
+    }
+    return true;
+}
+
+void MainWindow::on_pushButton_24_clicked()
+{
+    QFileInfo fileInfo(ui->lineEdit_5->text());
+    QString srcDir = fileInfo.path();                 // .../watch
+    QString dstDir = QDir::homePath() + "/.pypixelguiconf/faces/" + fileInfo.dir().dirName(); // .../faces/watch
+
+    if (!copyDirRecursively(srcDir, dstDir)) {
+        qWarning() << "Failed to copy" << srcDir << "to" << dstDir;
+    }
+
+    ui->listWidget->clear();
+    QDir dir(QDir::homePath() + "/.pypixelguiconf/faces");
+    QStringList dirList = dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+    for (const QString &dirName : dirList) {
+        ui->listWidget->addItem(dirName);
+    }
+}
+
+
+void MainWindow::on_pushButton_22_clicked()
+{
+    ui->listWidget->currentItem()->text();
+        // Create the engine once and own it on MainWindow, rather than as a
+        // local variable - a local would be destroyed the instant this slot
+        // returns, but the QTimer below keeps firing (and touching it) long
+        // after that, which is undefined behaviour / a crash waiting to happen.
+        if (!m_watchfaceEngine) {
+        m_watchfaceEngine = new WatchfaceEngine(this);
+
+        // Needs 'this' captured - sendPypixelCommand is a MainWindow member.
+        //
+        // We send the whole frame as one image (send_image_hex) rather than
+        // one set_pixel command per changed pixel. pypixelcolor's set_pixel
+        // is fire-and-forget over BLE (requires_ack=False) - unlike
+        // send_text/send_image, which wait for the device to confirm
+        // delivery - so a burst of per-pixel writes for a single digit
+        // change can be silently dropped, leaving the display stuck on a
+        // stale frame with no error and no way for us to detect it.
+        m_watchfaceEngine->sendFrame = [this](const QImage &frame) {
+            QByteArray pngBytes;
+            QBuffer buffer(&pngBytes);
+            buffer.open(QIODevice::WriteOnly);
+            if (!frame.save(&buffer, "PNG")) {
+                ui->outputTextEdit->append("Failed to encode watchface frame.");
+                return;
+            }
+            sendPypixelCommand("send_image_hex", QStringList()
+                                                     << QString::fromLatin1(pngBytes.toHex())
+                                                     << ".png");
+        };
+    }
+
+    if (!m_watchfaceEngine->loadWatchface(QDir::homePath() + "/.pypixelguiconf/faces/" + ui->listWidget->currentItem()->text() + "/face.json")) {
+        ui->outputTextEdit->append("Failed to load watchface (missing file or invalid JSON) - not starting updates.");
+        return;
+    }
+
+    if (!m_watchfaceTimer) {
+        m_watchfaceTimer = new QTimer(this);
+        connect(m_watchfaceTimer, &QTimer::timeout, this, [this]() {
+            m_watchfaceEngine->renderFrame(QDateTime::currentDateTime());
+        });
+    }
+    // Was 10000 (10s) - anything bound to "second" (or otherwise time-sensitive)
+    // only got redrawn once every 10 ticks, which looked like the watchface
+    // "didn't always update". Match the 1s cadence used by the clock timer.
+    m_watchfaceTimer->start(1000);
 }
 
