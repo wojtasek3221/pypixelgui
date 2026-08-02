@@ -74,13 +74,25 @@ private slots:
 
     //void onPlayerctlReadyRead();
 
-    void on_pushButton_9_clicked();
-
     void on_pushButton_21_clicked();
 
     void on_pushButton_24_clicked();
 
     void on_pushButton_22_clicked();
+
+    void on_pushButton_9_clicked();
+
+    void on_pushButton_10_clicked();
+
+    void on_pushButton_11_clicked();
+
+    void on_pushButton_5_clicked();
+
+    void on_pushButton_14_clicked();
+
+    void on_pushButton_26_clicked();
+
+    void on_pushButton_25_clicked();
 
 signals:
     // void nowPlayingTitleChanged(const QString &title);

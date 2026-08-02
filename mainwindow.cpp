@@ -24,6 +24,8 @@
 static int page = 0;
 static bool deps_ok = true;
 static QString mac_add;
+static bool power = true;
+static bool br_active = true;
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
@@ -43,11 +45,15 @@ MainWindow::MainWindow(QWidget *parent)
 
     if(content != "")
     {
-        startBridge(content);
+        mac_add = content;
+        startBridge(mac_add);
+        ui->label_22->setText(mac_add);
         sendPypixelCommand("send_text", QStringList()
                                             << "CONNECTION SUCCESFULL!"
                                             << "animation=1" << "speed=50" << "color=ffffff");
         ui->stackedWidget->setCurrentIndex(5);
+        ui->widget->hide();
+        ui->lineEdit_6->setText(ui->label_9->text());
     }
     else
     {
@@ -563,7 +569,7 @@ void MainWindow::onBridgeFinished(int exitCode, QProcess::ExitStatus exitStatus)
 
 void MainWindow::on_pushButton_3_clicked()
 {
-    const QString address = ui->lineEdit->text();
+    mac_add = ui->lineEdit->text();
     QFile file(QDir::homePath() + "/.pypixelguiconf/conf.txt");
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
         qDebug() << "Could not open file:" << file.errorString();
@@ -571,9 +577,10 @@ void MainWindow::on_pushButton_3_clicked()
     }
 
     QTextStream out(&file);
-    out << address;
+    out << mac_add;
     file.close();
-    startBridge(address);
+    startBridge(mac_add);
+    ui->label_22->setText(mac_add);
     sendPypixelCommand("send_text", QStringList()
                                         << "CONNECTION SUCCESFULL!"
                                         << "animation=1" << "speed=50" << "color=ffffff");
@@ -685,16 +692,12 @@ void MainWindow::on_pushButton_8_clicked()
 //music player
 //
 
-void MainWindow::on_pushButton_9_clicked()
-{
-
-}
 
 
 void MainWindow::on_pushButton_21_clicked()
 {
     QFileDialog dialog(this);
-    dialog.setNameFilter(tr("Json watchface files (face.json)"));
+    dialog.setNameFilter(tr("Json watchface file (face.json)"));
     dialog.setFileMode(QFileDialog::ExistingFile);
     dialog.setDirectory(QDir::homePath());     // restrict to a single existing file
     dialog.setAcceptMode(QFileDialog::AcceptOpen);   // "Open" dialog (default, but explicit is nice)
@@ -805,5 +808,63 @@ void MainWindow::on_pushButton_22_clicked()
     // only got redrawn once every 10 ticks, which looked like the watchface
     // "didn't always update". Match the 1s cadence used by the clock timer.
     m_watchfaceTimer->start(1000);
+    ui->pushButton_9->setEnabled(true);
+}
+
+
+void MainWindow::on_pushButton_9_clicked()
+{
+    m_watchfaceTimer->stop();
+    ui->pushButton_9->setEnabled(false);
+}
+
+
+void MainWindow::on_pushButton_10_clicked()
+{
+    ui->stackedWidget->setCurrentIndex(5);
+}
+
+
+void MainWindow::on_pushButton_11_clicked()
+{
+    if (power == true)
+    {
+        ui->pushButton_11->setText("Power on");
+        sendPypixelCommand("set_power", QStringList() << "on=False");
+        power = false;
+    }
+    else
+    {
+        ui->pushButton_11->setText("Power off");
+        sendPypixelCommand("set_power", QStringList() << "on=True");
+        power = true;
+    }
+}
+
+
+void MainWindow::on_pushButton_5_clicked()
+{
+        startBridge(mac_add);
+}
+
+
+void MainWindow::on_pushButton_14_clicked()
+{
+    ui->stackedWidget->setCurrentIndex(9);
+}
+
+
+void MainWindow::on_pushButton_26_clicked()
+{
+    ui->stackedWidget->setCurrentIndex(5);
+}
+
+
+void MainWindow::on_pushButton_25_clicked()
+{
+    sendPypixelCommand("set_brightness", QStringList()
+                       << QString("level=%1").arg(ui->horizontalSlider_2->value()));
+    sendPypixelCommand("set_orientation", QStringList()
+                                             << QString("orientation=%1").arg(ui->comboBox_3->currentIndex()));
 }
 

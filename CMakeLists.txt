@@ -19,6 +19,7 @@ set(PROJECT_SOURCES
         mainwindow.ui
         watchfaceengine.h
         watchfaceengine.cpp
+        resources.qrc
 )
 
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
