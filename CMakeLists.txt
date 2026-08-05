@@ -1,16 +1,13 @@
 cmake_minimum_required(VERSION 3.16)
-
 project(pypixel_gui1 VERSION 0.1 LANGUAGES CXX)
-
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
-
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
 find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Multimedia)
 
 set(PROJECT_SOURCES
         main.cpp
@@ -20,8 +17,17 @@ set(PROJECT_SOURCES
         watchfaceengine.h
         watchfaceengine.cpp
         resources.qrc
+        audioloopback.h
+        linuxloopbackcapture.h
+        linuxloopbackcapture.cpp
+        windowsloopbackcapture.h
+        windowsloopbackcapture.cpp
+        loopbackfactory.cpp
+        spectrumanalyzer.h
+        spectrumanalyzer.cpp
+        spectrumvisualizerengine.h
+        spectrumvisualizerengine.cpp
 )
-
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
     qt_add_executable(pypixel_gui1
         MANUAL_FINALIZATION
@@ -46,6 +52,10 @@ else()
 endif()
 
 target_link_libraries(pypixel_gui1 PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
+target_link_libraries(pypixel_gui1 PRIVATE Qt6::Multimedia)
+if(WIN32)
+    target_link_libraries(pypixel_gui1 PRIVATE ole32)
+endif()
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
 # If you are developing for iOS or macOS you should consider setting an
@@ -60,14 +70,12 @@ set_target_properties(pypixel_gui1 PROPERTIES
     MACOSX_BUNDLE TRUE
     WIN32_EXECUTABLE TRUE
 )
-
 include(GNUInstallDirs)
 install(TARGETS pypixel_gui1
     BUNDLE DESTINATION .
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
-
 if(QT_VERSION_MAJOR EQUAL 6)
     qt_finalize_executable(pypixel_gui1)
 endif()

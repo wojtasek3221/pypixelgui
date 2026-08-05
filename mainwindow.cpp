@@ -1,6 +1,9 @@
 #include "mainwindow.h"
 #include "./ui_mainwindow.h"
 #include "watchfaceengine.h"
+#include "audioloopback.h"
+#include "spectrumanalyzer.h"
+#include "spectrumvisualizerengine.h"
 #include <QApplication>
 #include <QProcess>
 #include <QMetaEnum>
@@ -57,62 +60,63 @@ MainWindow::MainWindow(QWidget *parent)
     }
     else
     {
-    ui->stackedWidget->setCurrentIndex(0);
-    ui->pushButton_2->setEnabled(false);
+        ui->stackedWidget->setCurrentIndex(0);
+        ui->pushButton_2->setEnabled(false);
 
-    ui->textEdit->insertPlainText("checking dependencies...");
-    QDir().mkpath(QDir::homePath() + "/.pypixelguiconf");
-    QDir().mkpath(QDir::homePath() + "/.pypixelguiconf/faces");
-    QFile file(QDir::homePath() + "/.pypixelguiconf/conf.txt");
-    file.open(QIODevice::WriteOnly);
+        ui->textEdit->insertPlainText("checking dependencies...");
+        QDir().mkpath(QDir::homePath() + "/.pypixelguiconf");
+        QDir().mkpath(QDir::homePath() + "/.pypixelguiconf/faces");
+        QFile file(QDir::homePath() + "/.pypixelguiconf/conf.txt");
+        file.open(QIODevice::WriteOnly);
 
 
-    QProcess process;
-    process.start("python3", QStringList() << "--version");
-    if (!process.waitForStarted(1000))
-    {
-        ui->textEdit->insertPlainText("\n Python couldn't be found, make sure it is installed and try again");
-        deps_ok = false;
-    }
-    else
-    {
-        process.waitForFinished(2000);
-        ui->textEdit->insertPlainText("\n Python found, note make sure that pip and venv works");
-    }
+        QProcess process;
+        process.start("python3", QStringList() << "--version");
+        if (!process.waitForStarted(1000))
+        {
+            ui->textEdit->insertPlainText("\n Python couldn't be found, make sure it is installed and try again");
+            deps_ok = false;
+        }
+        else
+        {
+            process.waitForFinished(2000);
+            ui->textEdit->insertPlainText("\n Python found, note make sure that pip and venv works");
+        }
 
-    process.start("git", QStringList() << "--version");
-    if (!process.waitForStarted(1000))
-    {
-        ui->textEdit->insertPlainText("\n Git couldn't be found, make sure it is installed and try again");
-        deps_ok = false;
-    }
-    else
-    {
-        process.waitForFinished(2000);
-        ui->textEdit->insertPlainText("\n Git found");
-    }
+        process.start("git", QStringList() << "--version");
+        if (!process.waitForStarted(1000))
+        {
+            ui->textEdit->insertPlainText("\n Git couldn't be found, make sure it is installed and try again");
+            deps_ok = false;
+        }
+        else
+        {
+            process.waitForFinished(2000);
+            ui->textEdit->insertPlainText("\n Git found");
+        }
 
-    process.start("bluetoothctl", QStringList() << "--version");
-    if (!process.waitForStarted(1000))
-    {
-        ui->textEdit->insertPlainText("\n Bluez couldn't be found, make sure it is installed and try again");
-        deps_ok = false;
-    }
-    else
-    {
-        process.waitForFinished(2000);
-        ui->textEdit->insertPlainText("\n Bluez found");
-    }
+        process.start("bluetoothctl", QStringList() << "--version");
+        if (!process.waitForStarted(1000))
+        {
+            ui->textEdit->insertPlainText("\n Bluez couldn't be found, make sure it is installed and try again");
+            deps_ok = false;
+        }
+        else
+        {
+            process.waitForFinished(2000);
+            ui->textEdit->insertPlainText("\n Bluez found");
+        }
 
-    if(deps_ok == true)
-    {
-        ui->pushButton_2->setEnabled(true);
+        if(deps_ok == true)
+        {
+            ui->pushButton_2->setEnabled(true);
+        }
     }
-   }
 }
 
 MainWindow::~MainWindow()
 {
+    stopVisualizer();
     stopBridge();
     delete ui;
 }
@@ -310,7 +314,7 @@ void MainWindow::installBridgeScript()
 {
     const QString path = bridgeScriptPath();
     if (QFile::exists(path))
-        return; // already installed, nothing to do
+        return;
 
     QFile file(path);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
@@ -321,11 +325,10 @@ void MainWindow::installBridgeScript()
     static const char *script = R"PYEOF(#!/usr/bin/env python3
 """
 pypixel_bridge.py - persistent BLE bridge for pypixelcolor.
-Connects to the BLE device ONCE and keeps the connection open for the
-lifetime of the process. Talks JSON, one object per line, over stdin/stdout.
 """
 import sys
 import json
+import time
 import asyncio
 import argparse
 
@@ -388,13 +391,19 @@ async def main(address):
                 positional_args, keyword_args = build_command_args(params)
                 command_func = COMMANDS[command_name]
                 try:
+                    t0 = time.monotonic()
                     await session.execute_command(command_func, *positional_args, **keyword_args)
-                    emit({"status": "success", "command": command_name})
+                    elapsed_ms = (time.monotonic() - t0) * 1000
+                    emit({"status": "success", "command": command_name, "elapsed_ms": elapsed_ms})
                 except Exception as cmd_err:
+                    sys.stderr.write(f"Command error ({command_name}): {cmd_err}\n")
+                    sys.stderr.flush()
                     emit({"status": "error", "command": command_name, "message": str(cmd_err)})
             else:
                 emit({"status": "error", "message": f"Unknown command: {command_name}"})
         except Exception as e:
+            sys.stderr.write(f"Bridge loop exception: {e}\n")
+            sys.stderr.flush()
             emit({"status": "error", "message": str(e)})
 
     try:
@@ -474,6 +483,14 @@ void MainWindow::stopBridge()
     pendingBridgeCommands.clear();
 }
 
+void MainWindow::applyDeviceMatrixSize()
+{
+    if (m_watchfaceEngine)
+        m_watchfaceEngine->setMatrixSize(m_deviceWidth, m_deviceHeight);
+    if (m_visualizerEngine)
+        m_visualizerEngine->setMatrixSize(m_deviceWidth, m_deviceHeight);
+}
+
 void MainWindow::sendPypixelCommand(const QString &command, const QStringList &params)
 {
     if (bridgeProcess == nullptr) {
@@ -522,7 +539,7 @@ void MainWindow::onBridgeReadyReadStandardOutput()
         QJsonParseError parseError;
         const QJsonDocument doc = QJsonDocument::fromJson(trimmed, &parseError);
         if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
-            ui->outputTextEdit->append("Bridge: " + QString(trimmed));
+            qDebug() << "[BLE Bridge STDOUT]:" << QString(trimmed);
             continue;
         }
 
@@ -531,13 +548,41 @@ void MainWindow::onBridgeReadyReadStandardOutput()
 
         if (status == "ready") {
             bridgeReady = true;
-            ui->outputTextEdit->append("✅ Connected - session will stay open for further commands.");
+            qDebug() << "✅ [BLE Bridge] Connected & Ready.";
             ui->pushButton_2->setEnabled(true);
             flushPendingBridgeCommands();
+            // Ask the device what size it actually is, rather than assuming
+            // 32x32 - handled below when the "get_device_info" reply arrives.
+            sendPypixelCommand("get_device_info", QStringList());
         } else if (status == "success") {
-            ui->outputTextEdit->append("✅ " + obj.value("command").toString() + " sent.");
+            const QString cmd = obj.value("command").toString();
+            if (cmd == "get_device_info") {
+                const QJsonObject data = obj.value("data").toObject();
+                const int width = data.value("width").toInt(m_deviceWidth);
+                const int height = data.value("height").toInt(m_deviceHeight);
+                if (width > 0 && height > 0) {
+                    m_deviceWidth = width;
+                    m_deviceHeight = height;
+                    qDebug() << "✅ [Device Info] Matrix size:" << m_deviceWidth << "x" << m_deviceHeight;
+                    applyDeviceMatrixSize();
+                }
+            } else if (cmd == "send_image_hex" && m_visualizerActive) {
+                const qint64 elapsedMs = QDateTime::currentMSecsSinceEpoch() - m_rhythmSendTimestampMs;
+                qDebug() << "✅ [Visualizer Frame ACK]:" << elapsedMs << "ms";
+                m_frameSendPending = false;
+                // Bands may well have moved on again while this frame was
+                // in flight - try the latest ones right away instead of
+                // waiting for the next timer tick.
+                trySendVisualizerFrame();
+            } else {
+                qDebug() << "✅ [Command Success]:" << cmd;
+            }
         } else {
-            ui->outputTextEdit->append("❌ " + obj.value("message").toString());
+            const QString cmd = obj.value("command").toString();
+            qDebug() << "❌ [Command Error]:" << cmd << "Message:" << obj.value("message").toString();
+            if (cmd == "send_image_hex" && m_visualizerActive) {
+                m_frameSendPending = false;
+            }
         }
     }
 }
@@ -545,8 +590,9 @@ void MainWindow::onBridgeReadyReadStandardOutput()
 void MainWindow::onBridgeReadyReadStandardError()
 {
     const QString output = bridgeProcess->readAllStandardError();
-    if (!output.trimmed().isEmpty())
-        ui->outputTextEdit->append("Bridge stderr: " + output.trimmed());
+    if (!output.trimmed().isEmpty()) {
+        qDebug() << "[BLE Bridge STDERR]:" << output.trimmed();
+    }
 }
 
 void MainWindow::onBridgeErrorOccurred(QProcess::ProcessError error)
@@ -561,6 +607,7 @@ void MainWindow::onBridgeFinished(int exitCode, QProcess::ExitStatus exitStatus)
     Q_UNUSED(exitStatus);
     bridgeReady = false;
     bridgeAddress.clear();
+    m_frameSendPending = false;
     if (bridgeProcess) {
         bridgeProcess->deleteLater();
         bridgeProcess = nullptr;
@@ -672,7 +719,7 @@ void MainWindow::on_pushButton_20_clicked()
     sendPypixelCommand("set_clock_mode", QStringList()
                                              << QString("style=%1").arg(ui->comboBox->currentIndex() + 1)
                                              << QString("show_date=%1").arg(show_date)
-                                                       << QString("format_24=%1").arg(format_24));
+                                             << QString("format_24=%1").arg(format_24));
 
 }
 
@@ -763,12 +810,16 @@ void MainWindow::on_pushButton_24_clicked()
 void MainWindow::on_pushButton_22_clicked()
 {
     ui->listWidget->currentItem()->text();
-        // Create the engine once and own it on MainWindow, rather than as a
-        // local variable - a local would be destroyed the instant this slot
-        // returns, but the QTimer below keeps firing (and touching it) long
-        // after that, which is undefined behaviour / a crash waiting to happen.
-        if (!m_watchfaceEngine) {
+    // Create the engine once and own it on MainWindow, rather than as a
+    // local variable - a local would be destroyed the instant this slot
+    // returns, but the QTimer below keeps firing (and touching it) long
+    // after that, which is undefined behaviour / a crash waiting to happen.
+    if (!m_watchfaceEngine) {
         m_watchfaceEngine = new WatchfaceEngine(this);
+        // Seed with the real queried device size rather than the engine's
+        // own 32x32 default - loadWatchface() below will still override
+        // this if the face's JSON specifies its own width/height.
+        m_watchfaceEngine->setMatrixSize(m_deviceWidth, m_deviceHeight);
 
         // Needs 'this' captured - sendPypixelCommand is a MainWindow member.
         //
@@ -844,7 +895,7 @@ void MainWindow::on_pushButton_11_clicked()
 
 void MainWindow::on_pushButton_5_clicked()
 {
-        startBridge(mac_add);
+    startBridge(mac_add);
 }
 
 
@@ -865,6 +916,182 @@ void MainWindow::on_pushButton_25_clicked()
     sendPypixelCommand("set_brightness", QStringList()
                        << QString("level=%1").arg(ui->horizontalSlider_2->value()));
     sendPypixelCommand("set_orientation", QStringList()
-                                             << QString("orientation=%1").arg(ui->comboBox_3->currentIndex()));
+                                              << QString("orientation=%1").arg(ui->comboBox_3->currentIndex()));
 }
 
+
+void MainWindow::on_pushButton_28_clicked()
+{
+    ui->stackedWidget->setCurrentIndex(10);
+}
+
+
+void MainWindow::on_pushButton_29_clicked()
+{
+    ui->stackedWidget->setCurrentIndex(9);
+}
+
+
+void MainWindow::on_pushButton_30_clicked()
+{
+    if (m_visualizerActive) {
+        stopVisualizer();
+        ui->pushButton_30->setText("Start Visualizer");
+    } else {
+        startVisualizer();
+        ui->pushButton_30->setText("Stop Visualizer");
+    }
+}
+
+void MainWindow::startVisualizer()
+{
+    if (m_visualizerActive)
+        return;
+
+    m_frameSendPending = false;
+
+    if (!m_audioCapture) {
+        m_audioCapture = createLoopbackCapture(this);
+        if (!m_audioCapture) {
+            ui->outputTextEdit->append("No system-audio loopback backend is available on this platform.");
+            return;
+        }
+        connect(m_audioCapture, &AudioLoopbackCapture::samplesReady,
+                this, &MainWindow::onLoopbackSamplesReady);
+        connect(m_audioCapture, &AudioLoopbackCapture::errorOccurred,
+                this, &MainWindow::onLoopbackErrorOccurred);
+    }
+
+    if (!m_spectrumAnalyzer) {
+        m_spectrumAnalyzer = new SpectrumAnalyzer(this);
+        m_spectrumAnalyzer->setFftSize(1024);
+        m_spectrumAnalyzer->setBandCount(11);
+        m_spectrumAnalyzer->setMaxLevel(15);
+        connect(m_spectrumAnalyzer, &SpectrumAnalyzer::bandsReady,
+                this, &MainWindow::onSpectrumBandsReady);
+    }
+
+    if (!m_visualizerEngine) {
+        m_visualizerEngine = new SpectrumVisualizerEngine(this);
+        // m_deviceWidth/Height come from get_device_info once the bridge
+        // connects (see onBridgeReadyReadStandardOutput); 32x32 is only
+        // the fallback until that reply arrives.
+        m_visualizerEngine->setMatrixSize(m_deviceWidth, m_deviceHeight);
+        m_visualizerEngine->setBandCount(11);
+        m_visualizerEngine->setMaxLevel(15);
+
+        // Same pattern as the watchface engine's sendFrame: encode the
+        // whole matrix as one PNG and send it through the acknowledged
+        // send_image_hex transfer, rather than per-pixel writes.
+        m_visualizerEngine->sendFrame = [this](const QImage &frame) {
+            QByteArray pngBytes;
+            QBuffer buffer(&pngBytes);
+            buffer.open(QIODevice::WriteOnly);
+            if (!frame.save(&buffer, "PNG")) {
+                ui->outputTextEdit->append("Failed to encode visualizer frame.");
+                return;
+            }
+            m_frameSendPending = true;
+            m_rhythmSendTimestampMs = QDateTime::currentMSecsSinceEpoch();
+            sendPypixelCommand("send_image_hex", QStringList()
+                                                     << QString::fromLatin1(pngBytes.toHex())
+                                                     << ".png");
+        };
+    }
+
+    if (!m_rhythmSendTimer) {
+        m_rhythmSendTimer = new QTimer(this);
+        connect(m_rhythmSendTimer, &QTimer::timeout, this, &MainWindow::onRhythmSendTimerTimeout);
+    }
+
+    if (!m_audioCapture->start(44100)) {
+        ui->outputTextEdit->append("Failed to start audio capture.");
+        return;
+    }
+
+    // Safety-net only - the real driver of send cadence is
+    // trySendVisualizerFrame(), called from onSpectrumBandsReady() and
+    // again as soon as each frame's ack comes back. This just re-tries in
+    // case a bandsReady/ack event goes missing. 150ms, matching the
+    // in-code comment this used to have (the old code actually started
+    // this timer at 1000ms, which is why updates looked stuck at ~1/sec).
+    m_rhythmSendTimer->start(150);
+    m_visualizerActive = true;
+    qDebug() << "Visualizer started.";
+}
+
+void MainWindow::stopVisualizer()
+{
+    if (m_rhythmSendTimer)
+        m_rhythmSendTimer->stop();
+    if (m_audioCapture)
+        m_audioCapture->stop();
+    m_visualizerActive = false;
+    m_frameSendPending = false;
+}
+
+void MainWindow::onLoopbackSamplesReady(QVector<float> samples, int sampleRate)
+{
+    if (m_spectrumAnalyzer)
+        m_spectrumAnalyzer->addSamples(samples, sampleRate);
+}
+
+void MainWindow::onLoopbackErrorOccurred(QString message)
+{
+    stopVisualizer();
+    ui->pushButton_30->setText("Start Visualizer");
+}
+
+void MainWindow::onSpectrumBandsReady(QVector<int> levels)
+{
+    m_latestBandLevels = levels;
+    // Try to render/send right away with these fresher levels instead of
+    // waiting for the next timer tick - if nothing's in flight, this is
+    // what actually gets us updates as fast as the BLE link can ack them.
+    trySendVisualizerFrame();
+}
+
+void MainWindow::onRhythmSendTimerTimeout()
+{
+    // This timer is now just a safety net (in case bandsReady/ack events
+    // stop arriving for some reason) - the real driver of send cadence is
+    // trySendVisualizerFrame(), called from onSpectrumBandsReady() and again
+    // as soon as each ack comes back in onBridgeReadyReadStandardOutput().
+    trySendVisualizerFrame();
+}
+
+void MainWindow::trySendVisualizerFrame()
+{
+    if (!m_visualizerActive || !m_visualizerEngine)
+        return;
+
+    if (m_latestBandLevels.size() < 11) {
+        qDebug() << "⚠️ [Visualizer] Waiting for band levels...";
+        return;
+    }
+
+    if (bridgeProcess == nullptr || !bridgeReady) {
+        qDebug() << "⚠️ [Visualizer] Bridge process not connected.";
+        return;
+    }
+
+    if (m_frameSendPending) {
+        // Normal behavior: previous frame is still waiting for ACK from the
+        // screen. Deliberately NOT calling render() here - the engine only
+        // diffs against frames it actually sent, so skipping the call
+        // entirely (rather than rendering and discarding the result) keeps
+        // that bookkeeping correct.
+        return;
+    }
+
+    // render() draws the bars, diffs them against the last frame actually
+    // sent, and only calls sendFrame() (which sets m_frameSendPending) if
+    // something changed - most ticks where the bars haven't moved send
+    // nothing at all.
+    m_visualizerEngine->render(m_latestBandLevels);
+}
+
+void MainWindow::on_pushButton_12_clicked()
+{
+    ui->stackedWidget->setCurrentIndex(11);
+}
