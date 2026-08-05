@@ -1,0 +1,17 @@
+<svg width="600" height="600" xmlns="http://www.w3.org/2000/svg">
+ <g id="Layer_1">
+  <title>Layer 1</title>
+  <g id="svg_13">
+   <ellipse ry="184.48599" rx="188.01869" id="svg_2" cy="235.00001" cx="299.99998" stroke="#000" fill="#000000"/>
+   <rect id="svg_3" height="470.00001" width="61.77757" y="0" x="269.1112" stroke="#000" fill="#000000"/>
+   <rect transform="matrix(0, 0.878505, -0.895327, 0, 514.634, -25.0514)" id="svg_4" height="535" width="69" y="-27.77347" x="261.51596" stroke="#000" fill="#000000"/>
+   <rect transform="matrix(0.633092, 0.621197, -0.633092, 0.621197, 253.64, -116.203)" id="svg_5" height="535" width="69" y="-21.43083" x="284.79654" stroke="#000" fill="#000000"/>
+   <rect transform="matrix(0.633092, -0.621197, 0.633092, 0.621197, -89.4955, 256.515)" id="svg_6" height="535" width="69" y="22.79654" x="290.43083" stroke="#000" fill="#000000"/>
+   <rect transform="matrix(0.827174, 0.336189, -0.342627, 0.811632, 116.7, -82.3092)" id="svg_7" height="535" width="69" y="-12.14862" x="292.86829" stroke="#000" fill="#000000"/>
+   <rect transform="matrix(0.824153, -0.343259, 0.349832, 0.808668, -70.0504, 122.329)" id="svg_8" height="535" width="69" y="12.05219" x="295.84407" stroke="#000" fill="#000000"/>
+   <rect transform="matrix(-0.349832, 0.808668, -0.824153, -0.343259, 600.295, 88.9229)" id="svg_9" height="535" width="69" y="-23.73069" x="249.61315" stroke="#000" fill="#000000"/>
+   <rect transform="matrix(-0.349832, -0.808668, 0.824153, -0.343259, 153.604, 574.124)" id="svg_10" height="535" width="69" y="33.84407" x="256.94781" stroke="#000" fill="#000000"/>
+  </g>
+  <text transform="matrix(1, 0, 0, 1, 0, 0)" xml:space="preserve" text-anchor="start" font-family="Noto Sans JP" font-size="109" stroke-width="0" id="svg_14" y="568" x="38" stroke="#000" fill="#000000">SETTINGS</text>
+ </g>
+</svg>
